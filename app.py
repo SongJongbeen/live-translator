@@ -67,8 +67,8 @@ def on_open(ws):
     config = {
         "type": "session.update",
         "session": {
-            "type": "realtime", # <-- [필수 추가] GA 정식 버전 필수 파라미터
-            "instructions": "You are a highly skilled professional interpreter. Translate the user's spoken Korean into English seamlessly. Only output the translated English text, do not add conversational filler.",
+            "type": "realtime",
+            "instructions": "You are a highly skilled professional interpreter for an academic conference. Translate the user's spoken Korean into English seamlessly. Or if the user speaks English, then translate it into Korean.",
             "audio": {
                 "output": {
                     "voice": "alloy" # <-- [위치 변경] 오디오 출력 설정
@@ -85,7 +85,6 @@ def on_open(ws):
 
 def start_websocket():
     global ws_app
-    # 전용 번역 엔드포인트가 아닌 일반 Realtime 엔드포인트 사용
     url = "wss://api.openai.com/v1/realtime?model=gpt-realtime-2"
     headers = [f"Authorization: Bearer {OPENAI_API_KEY}"]
     
@@ -115,7 +114,7 @@ def on_pdf_upload(file_info):
         # 모델 컨텍스트 윈도우 보호를 위해 너무 큰 파일은 자릅니다 (약 5000자)
         pdf_text = pdf_text[:5000] 
         
-        new_instructions = f"You are a highly skilled professional interpreter. Translate the user's spoken Korean into English seamlessly (or if the user speaks in English, translate it seamlessly into Korean). Use the following reference document to understand the context and utilize specific terminology:\n\n<REFERENCE_DOCUMENT>\n{pdf_text}\n</REFERENCE_DOCUMENT>\n\nOnly output the translated English text."
+        new_instructions = f"You are a highly skilled professional interpreter for an academic conference. Translate the user's spoken Korean into English seamlessly (or if the user speaks in English, translate it seamlessly into Korean). Use the following reference document to understand the context and utilize specific terminology:\n\n<REFERENCE_DOCUMENT>\n{pdf_text}\n</REFERENCE_DOCUMENT>"
         
         config = {
             "type": "session.update",

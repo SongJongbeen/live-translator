@@ -187,4 +187,8 @@ with gr.Blocks(title="고려대학교 동시통역 프로그램") as demo:
     mic.stream(fn=process_audio, inputs=[mic], outputs=[source_box, translated_box])
 
 if __name__ == "__main__":
-    demo.launch()
+    # 로컬에서 7860 포트로 실행됨
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", 7860))
+    )

@@ -31,13 +31,13 @@ ws_app = None
 # ---------------------------------------------------------
 # WebSocket Event Handlers (표준 gpt-realtime-2 이벤트로 변경)
 # ---------------------------------------------------------
-def start_websocket_thread():
+# def start_websocket_thread():
     # 이 함수는 서버가 시작될 때 한 번만 호출되도록 구성합니다.
-    def run():
-        ws_app.run_forever()
+#     def run():
+#         ws_app.run_forever()
     
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
+#     thread = threading.Thread(target=run, daemon=True)
+#     thread.start()
 
 def on_message(ws, message):
     try:
@@ -196,7 +196,7 @@ with gr.Blocks(title="고려대학교 동시통역 프로그램") as demo:
     mic.stream(fn=process_audio, inputs=[mic], outputs=[source_box, translated_box])
 
 if __name__ == "__main__":
-    start_websocket_thread()
+    threading.Thread(target=start_websocket, daemon=True).start()
 
     # 로컬에서 7860 포트로 실행됨
     demo.launch(

@@ -18,27 +18,16 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# load_dotenv()
-# if not os.getenv("OPENAI_API_KEY"):
-#     logger.error("OPENAI_API_KEY is missing! Please check your .env file.")
-
 transcripts = {
     "source": "",
     "translated": ""
 }
 ws_app = None
+ws_thread = None
 
 # ---------------------------------------------------------
-# WebSocket Event Handlers (표준 gpt-realtime-2 이벤트로 변경)
+# WebSocket Event Handlers
 # ---------------------------------------------------------
-# def start_websocket_thread():
-    # 이 함수는 서버가 시작될 때 한 번만 호출되도록 구성합니다.
-#     def run():
-#         ws_app.run_forever()
-    
-#     thread = threading.Thread(target=run, daemon=True)
-#     thread.start()
-
 def on_message(ws, message):
     try:
         event = json.loads(message)
@@ -47,18 +36,15 @@ def on_message(ws, message):
         if event_type == "error":
             logger.error(f"OpenAI API Error: {json.dumps(event.get('error', {}), indent=2)}")
             
-        # 번역된 텍스트 수신 (어시스턴트 응답)
         elif event_type == "response.output_audio_transcript.delta":
             delta = event.get("delta", "")
             transcripts["translated"] += delta
             print(delta, end="", flush=True)
             
-        # 턴이 끝났을 때 줄바꿈 추가
         elif event_type == "response.done":
             transcripts["translated"] += "\n"
             print() 
             
-        # 사용자의 원본 한국어 음성 인식 완료 시점
         elif event_type == "conversation.item.input_audio_transcription.completed":
             transcripts["source"] += event.get("transcript", "") + "\n\n"
             
@@ -81,11 +67,11 @@ def on_open(ws):
             "instructions": "You are a highly skilled professional interpreter for an academic conference. Translate the user's spoken Korean into English seamlessly. Or if the user speaks English, then translate it into Korean.",
             "audio": {
                 "output": {
-                    "voice": "alloy" # <-- [위치 변경] 오디오 출력 설정
+                    "voice": "alloy" 
                 },
                 "input": {
                     "transcription": {
-                        "model": "gpt-realtime-whisper" # <-- [위치 변경] 오디오 입력 설정
+                        "model": "gpt-realtime-whisper" 
                     }
                 }
             }
@@ -105,23 +91,38 @@ def start_websocket():
     )
     ws_app.run_forever()
 
-threading.Thread(target=start_websocket, daemon=True).start()
+# ---------------------------------------------------------
+# Connection Management (새로 추가된 부분)
+# ---------------------------------------------------------
+def connect_server():
+    global ws_thread, ws_app
+    if ws_app and ws_app.sock and ws_app.sock.connected:
+        return "🟢 이미 서버에 연결되어 있습니다."
+    
+    ws_thread = threading.Thread(target=start_websocket, daemon=True)
+    ws_thread.start()
+    return "🟡 서버 연결 중... (음성 입력을 시작하셔도 됩니다)"
+
+def disconnect_server():
+    global ws_app
+    if ws_app:
+        ws_app.close()
+        return "🔴 서버 연결이 종료되었습니다."
+    return "서버가 이미 종료되어 있습니다."
 
 # ---------------------------------------------------------
-# PDF Upload Handler (동적 세션 업데이트)
+# PDF Upload Handler
 # ---------------------------------------------------------
 def on_pdf_upload(file_info):
     global ws_app
     if not file_info:
         return "파일이 업로드되지 않았습니다."
     if ws_app is None or not ws_app.sock or not ws_app.sock.connected:
-        return "WebSocket이 아직 연결되지 않았습니다. 잠시 후 다시 시도하세요."
+        return "⚠️ WebSocket이 연결되지 않았습니다. 먼저 '서버 연결' 버튼을 눌러주세요."
     
     try:
         reader = PyPDF2.PdfReader(file_info.name)
         pdf_text = "".join([page.extract_text() + "\n" for page in reader.pages])
-        
-        # 모델 컨텍스트 윈도우 보호를 위해 너무 큰 파일은 자릅니다 (약 5000자)
         pdf_text = pdf_text[:5000] 
         
         new_instructions = f"You are a highly skilled professional interpreter for an academic conference. Translate the user's spoken Korean into English seamlessly (or if the user speaks in English, translate it seamlessly into Korean). Use the following reference document to understand the context and utilize specific terminology:\n\n<REFERENCE_DOCUMENT>\n{pdf_text}\n</REFERENCE_DOCUMENT>"
@@ -163,7 +164,6 @@ def process_audio(audio_chunk):
         pcm16 = np.int16(audio_data * 32767).tobytes()
         base64_audio = base64.b64encode(pcm16).decode("utf-8")
         
-        # 번역 세션 전용이 아니므로 'session.' 접두사를 제거합니다.
         event = {
             "type": "input_audio_buffer.append",
             "audio": base64_audio
@@ -182,6 +182,12 @@ with gr.Blocks(title="고려대학교 동시통역 프로그램") as demo:
     gr.Markdown("# 고려대학교 동시통역 프로그램")
     gr.Markdown("문의: 송종빈 (1041489@gmail.com)")
     
+    # 서버 연결 제어 버튼 (추가됨)
+    with gr.Row():
+        btn_connect = gr.Button("🟢 서버 연결 시작", variant="primary")
+        btn_disconnect = gr.Button("🔴 서버 연결 종료", variant="stop")
+        ws_status_text = gr.Textbox(label="서버 연결 상태", value="🔴 연결되지 않음 (사용 전 연결 버튼을 누르세요)", interactive=False)
+        
     with gr.Row():
         pdf_upload = gr.File(label="참고용 PDF 업로드 (선택사항)", file_types=[".pdf"])
         status_text = gr.Textbox(label="시스템 상태", interactive=False)
@@ -192,13 +198,16 @@ with gr.Blocks(title="고려대학교 동시통역 프로그램") as demo:
             
     mic = gr.Audio(sources=["microphone"], streaming=True, label="Microphone")
     
+    # Event Listeners
+    btn_connect.click(fn=connect_server, inputs=[], outputs=[ws_status_text])
+    btn_disconnect.click(fn=disconnect_server, inputs=[], outputs=[ws_status_text])
+    
     pdf_upload.upload(fn=on_pdf_upload, inputs=[pdf_upload], outputs=[status_text])
     mic.stream(fn=process_audio, inputs=[mic], outputs=[source_box, translated_box])
 
 if __name__ == "__main__":
-    threading.Thread(target=start_websocket, daemon=True).start()
-
-    # 로컬에서 7860 포트로 실행됨
+    # 기존에 백그라운드에서 무조건 웹소켓을 실행하던 코드는 삭제했습니다.
+    # 로컬에서 포트로 실행됨
     demo.launch(
         server_name="0.0.0.0",
         server_port=int(os.environ.get("PORT", 8080))
